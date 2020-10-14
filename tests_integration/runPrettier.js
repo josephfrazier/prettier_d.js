@@ -1,27 +1,35 @@
 "use strict";
 
 const fs = require("fs");
+// const mockStdin = require("mock-stdin");
 const path = require("path");
 const stripAnsi = require("strip-ansi");
-const sinon = require("sinon");
+// const sinon = require("sinon");
 const { SynchronousPromise } = require("synchronous-promise");
 const { prettierCli, thirdParty } = require("./env");
 
 if (!global.jest) {
+  const jestMock = require('jest-mock');
   global.jest = {
     spyOn: (object, method) => {
-      return {
-        mockImplementation: (mockImpl) => {
-          sinon.replace(object, method, sinon.fake(mockImpl));
-        },
-      };
+      return jestMock.spyOn(object, method)
+      // return {
+      //   mockImplementation: (mockImpl) => {
+      //     sinon.replace(object, method, sinon.fake(mockImpl));
+      //   },
+      // };
     },
-    resetModules: () => delete require.cache[require.resolve(prettierCli)],
-    restoreAllMocks: () => sinon.restore(),
+    resetModules: () => {
+      delete require.cache[require.resolve(prettierCli)];
+      delete require.cache[require.resolve('../src/cli')];
+      delete require.cache[require.resolve(thirdParty)];
+    },
+    restoreAllMocks: () => jestMock.restoreAllMocks(),
   };
 }
 
 function runPrettier(dir, args, options) {
+  console.log({runPrettier: {dir, args, options, prettierCli}})
   args = args || [];
   options = options || {};
 
@@ -88,9 +96,16 @@ function runPrettier(dir, args, options) {
   // We cannot use `jest.setMock("get-stream", impl)` here, because in the
   // production build everything is bundled into one file so there is no
   // "get-stream" module to mock.
+
+  // mockStdin.stdin().send(options.input || "").end();
+
   jest
     .spyOn(require(thirdParty), "getStream")
-    .mockImplementation(() => SynchronousPromise.resolve(options.input || ""));
+    .mockImplementation(() => {
+      console.log(JSON.stringify({getStreamMock: options.input || ""}))
+      return SynchronousPromise.resolve(options.input || "");
+    })
+  require(thirdParty).getStream().then(getStream => console.log(JSON.stringify({runPrettier: { getStream }})))
   jest
     .spyOn(require(thirdParty), "isCI")
     .mockImplementation(() => !!options.ci);
@@ -115,7 +130,18 @@ function runPrettier(dir, args, options) {
     .mockImplementation(() => process.cwd());
 
   try {
+    // jest.resetModules();
+    console.log(Object.keys(require.cache).length)
+    console.log(require.resolve(prettierCli) in require.cache)
+    console.log('/Users/josephfrazier/workspace/prettier_d/src/cli/index.js' in require.cache)
+
     require(prettierCli);
+    console.log(Object.keys(require.cache).length)
+    console.log(require.resolve(prettierCli) in require.cache)
+    console.log('/Users/josephfrazier/workspace/prettier_d/src/cli/index.js' in require.cache)
+
+    // jest.resetModules();
+
     status = (status === undefined ? process.exitCode : status) || 0;
   } catch (error) {
     status = 1;
